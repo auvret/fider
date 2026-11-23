@@ -1,0 +1,58 @@
+name: Publish image to GHCR
+
+# Builds this branch (upstream main with fixes not yet released upstream) for amd64 and arm64 and publishes
+# ghcr.io/<owner>/fider:pkce-<commit>. Consumers pin the image by digest. Runs on every push to the image branch only;
+# the branches sent upstream as pull requests never carry this workflow.
+on:
+  push:
+    branches: [image]
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        id: checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Tag
+        id: tag
+        run: echo "name=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/fider:pkce-${GITHUB_SHA::8}" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push
+        id: build
+        uses: docker/build-push-action@v7
+        with:
+          push: true
+          context: .
+          build-args: |
+            COMMITHASH=${{ github.sha }}
+            VERSION=0.40.0-pkce
+          platforms: linux/amd64,linux/arm64/v8
+          tags: ${{ steps.tag.outputs.name }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.licenses=AGPL-3.0
+
+      - name: Digest
+        run: echo "${{ steps.tag.outputs.name }}@${{ steps.build.outputs.digest }}" | tee -a "$GITHUB_STEP_SUMMARY"
