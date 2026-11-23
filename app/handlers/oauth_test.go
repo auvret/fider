@@ -1224,3 +1224,45 @@ func ExpectOAuthHandoff(handoff, expectedProvider string, expectedTenant *entity
 	Expect(claims.ExpiresAt).IsNotNil()
 	return claims
 }
+
+// The callback exchanges the code, so it must pass on the PKCE seed signed into the state,
+// from which the code verifier is derived, in every flow it exchanges for.
+func TestCallbackHandler_PassesPKCESeedToTheExchange(t *testing.T) {
+	RegisterT(t)
+	mockTenantByDomain()
+
+	var seeds []string
+	bus.AddHandler(func(ctx context.Context, q *query.GetOAuthProfile) error {
+		seeds = append(seeds, q.PKCESeed)
+		q.Result = &dto.OAuthUserProfile{ID: "FB123", Name: "Jon Snow", Email: "jon.snow@got.com"}
+		return nil
+	})
+	bus.AddHandler(func(ctx context.Context, q *query.GetOAuthRawProfile) error {
+		seeds = append(seeds, q.PKCESeed)
+		q.Result = `{"id":"FB123"}`
+		return nil
+	})
+
+	for _, redirect := range []string{
+		"http://avengers.test.fider.io",                     // sign in
+		"http://login.test.fider.io/signup",                 // sign up
+		"http://avengers.test.fider.io/oauth/facebook/echo", // test page
+	} {
+		state, _ := jwt.Encode(jwt.OAuthStateClaims{
+			Redirect:      redirect,
+			SessionIDHash: hashSession("888"),
+			PKCESeed:      "SEED-" + redirect,
+		})
+		code, _ := mock.NewServer().
+			WithURL("http://login.test.fider.io/oauth/callback?state="+state+"&code=123").
+			AddParam("provider", app.FacebookProvider).
+			Execute(handlers.OAuthCallback())
+		Expect(code).Equals(http.StatusTemporaryRedirect)
+	}
+
+	Expect(seeds).Equals([]string{
+		"SEED-http://avengers.test.fider.io",
+		"SEED-http://login.test.fider.io/signup",
+		"SEED-http://avengers.test.fider.io/oauth/facebook/echo",
+	})
+}

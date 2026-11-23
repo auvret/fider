@@ -49,6 +49,9 @@ type OAuthStateClaims struct {
 	Redirect      string `json:"oauthstate/redirect"`
 	SessionIDHash string `json:"oauthstate/session_id_hash"` // hash of the browser session ID that started the flow
 	Code          string `json:"oauthstate/code"`
+	// PKCESeed is a random value the PKCE code verifier is derived from (see the oauth
+	// service). Empty in states issued before PKCE was added, which then complete without it.
+	PKCESeed string `json:"oauthstate/pkce_seed,omitempty"`
 	Metadata
 }
 

@@ -270,10 +270,20 @@ func getOAuthAuthorizationURL(ctx context.Context, q *query.GetOAuthAuthorizatio
 	parameters.Add("redirect_uri", fmt.Sprintf("%s/oauth/%s/callback", oauthBaseURL, q.Provider))
 	parameters.Add("response_type", "code")
 
+	// PKCE (RFC 7636, S256) on every sign in. A provider that doesn't support it ignores the
+	// parameters, as OAuth 2.0 requires of unrecognized ones (RFC 6749, sections 3.1 and 3.2).
+	seed, err := newPKCESeed()
+	if err != nil {
+		return err
+	}
+	parameters.Add("code_challenge", oauth2.S256ChallengeFromVerifier(pkceVerifier(seed)))
+	parameters.Add("code_challenge_method", "S256")
+
 	state, err := jwt.Encode(jwt.OAuthStateClaims{
 		Redirect:      q.Redirect,
 		SessionIDHash: q.SessionIDHash,
 		Code:          q.Code,
+		PKCESeed:      seed,
 		Metadata: jwt.Metadata{
 			ExpiresAt: jwt.Time(time.Now().Add(10 * time.Minute)),
 		},
@@ -300,7 +310,7 @@ func getOAuthProfile(ctx context.Context, q *query.GetOAuthProfile) error {
 		return errors.New("Provider %s is disabled", q.Provider)
 	}
 
-	rawProfile := &query.GetOAuthRawProfile{Provider: q.Provider, Code: q.Code}
+	rawProfile := &query.GetOAuthRawProfile{Provider: q.Provider, Code: q.Code, PKCESeed: q.PKCESeed}
 	err = bus.Dispatch(ctx, rawProfile)
 	if err != nil {
 		return err
@@ -338,8 +348,13 @@ func getOAuthRawProfile(ctx context.Context, q *query.GetOAuthRawProfile) error 
 		RedirectURL: fmt.Sprintf("%s/oauth/%s/callback", oauthBaseURL, q.Provider),
 	}).Exchange
 
+	var opts []oauth2.AuthCodeOption
+	if q.PKCESeed != "" {
+		opts = append(opts, oauth2.VerifierOption(pkceVerifier(q.PKCESeed)))
+	}
+
 	guard := requiresSSRFGuard(q.Provider, config)
-	oauthToken, err := exchange(tokenExchangeContext(ctx, guard), q.Code)
+	oauthToken, err := exchange(tokenExchangeContext(ctx, guard), q.Code, opts...)
 	if err != nil {
 		return err
 	}

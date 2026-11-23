@@ -412,7 +412,7 @@ func OAuthCallback() web.HandlerFunc {
 				return c.Forbidden()
 			}
 
-			oauthUser := &query.GetOAuthProfile{Provider: provider, Code: code}
+			oauthUser := &query.GetOAuthProfile{Provider: provider, Code: code, PKCESeed: claims.PKCESeed}
 			if err := bus.Dispatch(c, oauthUser); err != nil {
 				return c.Failure(err)
 			}
@@ -454,7 +454,7 @@ func OAuthCallback() web.HandlerFunc {
 
 		//Test OAuth
 		if redirectURL.Path == fmt.Sprintf("/oauth/%s/echo", provider) {
-			rawProfile := &query.GetOAuthRawProfile{Provider: provider, Code: code}
+			rawProfile := &query.GetOAuthRawProfile{Provider: provider, Code: code, PKCESeed: claims.PKCESeed}
 			if err := bus.Dispatch(c, rawProfile); err != nil {
 				handoff.Error = errors.Cause(err).Error()
 			}
@@ -478,7 +478,7 @@ func OAuthCallback() web.HandlerFunc {
 		}
 
 		//Sign in process
-		oauthUser := &query.GetOAuthProfile{Provider: provider, Code: code}
+		oauthUser := &query.GetOAuthProfile{Provider: provider, Code: code, PKCESeed: claims.PKCESeed}
 		if err := bus.Dispatch(c, oauthUser); err != nil {
 			return c.Failure(err)
 		}

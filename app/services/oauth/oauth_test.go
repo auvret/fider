@@ -39,15 +39,29 @@ func newGetContext(rawurl string) *web.Context {
 }
 
 // ExpectAuthURL checks an authorization URL and the claims signed into its state parameter.
-// The state can't be compared as a string because it carries a freshly generated expiry.
-func ExpectAuthURL(actual, expectedPrefix, expectedRedirect, expectedSessionIDHash string) {
-	Expect(strings.HasPrefix(actual, expectedPrefix)).IsTrue()
+// The state can't be compared as a string because it carries a freshly generated expiry, and
+// the PKCE challenge can't either because it comes from a random seed: both are checked, then
+// the challenge is left out of the comparison with expectedPrefix.
+func ExpectAuthURL(actual, expectedPrefix, expectedRedirect, expectedSessionIDHash string) *jwt.OAuthStateClaims {
+	u, err := url.Parse(actual)
+	Expect(err).IsNil()
+	params := u.Query()
+	challenge := params.Get("code_challenge")
+	Expect(challenge).HasLen(43)
+	Expect(params.Get("code_challenge_method")).Equals("S256")
+	params.Del("code_challenge")
+	params.Del("code_challenge_method")
+	u.RawQuery = params.Encode()
+	withoutChallenge := u.String()
+	Expect(strings.HasPrefix(withoutChallenge, expectedPrefix)).IsTrue()
 
-	claims, err := jwt.DecodeOAuthStateClaims(strings.TrimPrefix(actual, expectedPrefix))
+	claims, err := jwt.DecodeOAuthStateClaims(strings.TrimPrefix(withoutChallenge, expectedPrefix))
 	Expect(err).IsNil()
 	Expect(claims.Redirect).Equals(expectedRedirect)
 	Expect(claims.SessionIDHash).Equals(expectedSessionIDHash)
 	Expect(claims.ExpiresAt).IsNotNil()
+	Expect(claims.PKCESeed).HasLen(43)
+	return claims
 }
 func TestGetAuthURL_Facebook(t *testing.T) {
 	RegisterT(t)

@@ -28,6 +28,9 @@ type GetOAuthAuthorizationURL struct {
 type GetOAuthProfile struct {
 	Provider string
 	Code     string
+	// PKCESeed comes from the OAuth state; the code verifier sent with the exchange is
+	// derived from it. Empty exchanges the code without PKCE.
+	PKCESeed string
 
 	Result *dto.OAuthUserProfile
 }
@@ -35,6 +38,7 @@ type GetOAuthProfile struct {
 type GetOAuthRawProfile struct {
 	Provider string
 	Code     string
+	PKCESeed string // see GetOAuthProfile
 
 	Result string
 }
